@@ -12,6 +12,8 @@ import (
 	"github.com/go-chi/chi/middleware"
 
 	"github.com/mmcdole/gofeed/rss"
+
+	"github.com/patrickmn/go-cache"
 )
 
 type RSSMeta struct {
@@ -21,14 +23,7 @@ type RSSMeta struct {
 }
 
 var rssSources []RSSMeta
-
-/*
-const (
-	bbcUKNews       = "http://feeds.bbci.co.uk/news/uk/rss.xml"
-	bbcTechNews     = "http://feeds.bbci.co.uk/news/technology/rss.xml"
-	reutersUKNews   = "http://feeds.reuters.com/reuters/UKdomesticNews?format=xml"
-	reutersTechNews = "http://feeds.reuters.com/reuters/technologyNews?format=xml"
-)*/
+var newsCache *cache.Cache
 
 func init() {
 	var (
@@ -38,6 +33,10 @@ func init() {
 		reutersTechNews = RSSMeta{url: "http://feeds.reuters.com/reuters/technologyNews?format=xml", category: "Technology", provider: "Reuters"}
 	)
 	rssSources = []RSSMeta{reutersTechNews, reutersUKNews, bbcTechNews, bbcUKNews}
+
+	// Create a cache with a default expiration time of 5 minutes, and which
+	// purges expired items every 10 minutes
+	newsCache = cache.New(1*time.Minute, 2*time.Minute)
 }
 
 type NewsItem struct {
@@ -50,11 +49,6 @@ type NewsItem struct {
 
 type newsAggregate []NewsItem
 
-/*
-func (p newsAggregate) Len() int           { return len(p) }
-func (p newsAggregate) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
-func (p newsAggregate) Less(i, j int) bool { return p[i].DatePublished.Before(*p[j].DatePublished) }
-*/
 func main() {
 	r := chi.NewRouter()
 	// A good base middleware stack
@@ -73,7 +67,7 @@ func main() {
 	})
 	// RESTy routes for "articles" resource
 	r.Route("/articles", func(r chi.Router) {
-		r.Get("/", listArticles) // GET /articles/search
+		r.Get("/", listArticles) // GET /articles/?category=&provider=
 	})
 
 	http.ListenAndServe(":3333", r)
@@ -83,25 +77,24 @@ func listArticles(w http.ResponseWriter, r *http.Request) {
 	queryMap := r.URL.Query()
 	category := queryMap.Get("category")
 	provider := queryMap.Get("provider")
-	fmt.Printf("category:%#v\n", category)
-	fmt.Printf("provider:%#v\n", provider)
-	// w.Write([]byte(fmt.Sprintf("hi %s", string("fun"))))
+
 	filterCriteria := map[string]string{"category": category, "provider": provider}
 	news, err := fetchNewsIems(rssSources)
 	if err != nil {
 		fmt.Errorf(err.Error())
 	}
-	/*
-		if err == nil {
-			totalNews := len(news)
-			jsonNews, _ := json.MarshalIndent(news, "", "    ")
-			fmt.Printf("%s\nof total News Items: %d\n", string(jsonNews), totalNews)
-		}*/
+
 	fmt.Printf("Total news articles are:%d\n", len(news))
 	filteredNews := filterNewsAggregate(news, filterCriteria)
+	fmt.Printf("Filter Criteria is:\nCategory:%s\nProvider:%s\n", filterCriteria["category"], filterCriteria["provider"])
 	fmt.Printf("Filtered news articles are:%d\n", len(filteredNews))
-	jsonFilteredNews, _ := json.Marshal(filteredNews)
+	jsonFilteredNews, err := json.Marshal(filteredNews)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.Write(jsonFilteredNews)
 }
 
@@ -117,14 +110,6 @@ func filterNewsAggregate(news newsAggregate, filterCriteria map[string]string) (
 
 func selectorCriteria(newsItem NewsItem, filterCriteria map[string]string) (isSelected bool) {
 	isSelected = true
-	/*
-		for key, criterion := range filterCriteria {
-			if criterion != "" && ((strings.EqualFold(key, "category") && !strings.EqualFold(newsItem.Category, criterion)) ||
-				(strings.EqualFold(key, "provider") && !strings.EqualFold(newsItem.Provider, criterion))) {
-				return false
-			}
-		}
-	*/
 
 	filterCate, _ := filterCriteria["category"]
 	if filterCate != "" && !strings.EqualFold(newsItem.Category, filterCate) {
@@ -147,11 +132,7 @@ func downloadRSS(url string) (*rss.Feed, error) {
 	}
 
 	defer resp.Body.Close()
-	/*
-		fp := gofeed.NewParser()
-		feed, _ := fp.ParseURL(url)
-		fmt.Println(feed.Title)
-	*/
+
 	fp := rss.Parser{}
 	rssFeed, err := fp.Parse(resp.Body)
 	if err != nil {
@@ -163,6 +144,12 @@ func downloadRSS(url string) (*rss.Feed, error) {
 }
 
 func fetchNewsIems(rssSources []RSSMeta) (newsAggregate, error) {
+	newsFromCache, found := newsCache.Get("news")
+	if found {
+		fmt.Println("Served from newsCache")
+		return newsFromCache.(newsAggregate), nil
+	}
+
 	news := make(newsAggregate, 0)
 
 	for _, rssSrc := range rssSources {
@@ -171,78 +158,23 @@ func fetchNewsIems(rssSources []RSSMeta) (newsAggregate, error) {
 			fmt.Errorf("Error:%s\n", err.Error())
 			return nil, err
 		}
-		// provider, category := fetchFeedMeta(url)
-		// fmt.Printf("Data\n%s\nurl: %s feed data", feedData, url)
+
 		for _, rssItem := range feedData.Items {
-			/*
-				fmt.Printf("%dth item:\n%#v\n", i+1, rssItem)
-				fmt.Printf("Title:%s\n", rssItem.Title)
-				fmt.Printf("Link:%s\n", rssItem.Link)
-				fmt.Printf("PubDateParsed:%s\n", rssItem.PubDateParsed)
-				// fmt.Printf("PubDate:%s\n", rssItem.PubDate)
-			*/
-			/*
-				link, err := url.Parse(rssItem.Link)
-				if err != nil {
-					fmt.Errorf("url can't be parsed:\n%s\n", rssItem.Link)
-				}
-				linkStr := link.String()
-			*/
 			newsItem := NewsItem{Title: rssItem.Title, Url: rssItem.Link, DatePublished: rssItem.PubDateParsed, Provider: rssSrc.provider, Category: rssSrc.category}
-			// news = append(news, newsItem)
 			news = sortedInsert(news, newsItem)
 		}
 	}
+	
+	// Setting the value of key:"news" to value:news, with the default expiration time
+	newsCache.Set("news", news, cache.DefaultExpiration)
 
 	return news, nil
 }
 
 func sortedInsert(news newsAggregate, newsItem NewsItem) newsAggregate {
-	/*
-		len:=len(news)
-		if len == 0 { return []NewsItem{newsItem} }
-
-		i := sort.Search(l, func(i int) bool { return news[i].Less(newsItem)})
-		if i==len {  // not found = new value is the smallest
-				return append([newsItem],news)
-		}
-		if i == len-1 { // new value is the biggest
-				return append(news[0:len],newsItem)
-		}
-		return append(news[0:len], newsItem, news[len+1:])
-	*/
 	index := sort.Search(len(news), func(i int) bool { return news[i].DatePublished.Before(*newsItem.DatePublished) })
-	news = append(news, NewsItem{}) // appending empty NewsItem to increase length of news slice
+	news = append(news, NewsItem{}) // appending empty NewsItem to increase size of news slice
 	copy(news[index+1:], news[index:])
 	news[index] = newsItem
 	return news
 }
-
-/*
-func fetchFeedMeta(url string) (provider, category string) {
-	switch url {
-	case reutersTechNews:
-		provider = "Reuters"
-		category = "Technology"
-	case reutersUKNews:
-		provider = "Reuters"
-		category = "UK"
-	case bbcTechNews:
-		provider = "BBC"
-		category = "Technology"
-	case bbcUKNews:
-		provider = "BBC"
-		category = "UK"
-	default:
-		provider = "www"
-		category = "fun"
-	}
-	return provider, category
-}
-*/
-/*
-func (f Feed) String() string {
-	json, _ := json.MarshalIndent(f, "", "    ")
-	return string(json)
-}
-*/
