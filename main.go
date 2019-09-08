@@ -5,22 +5,40 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
-	/*
-		"github.com/go-chi/chi"
-		"github.com/go-chi/chi/middleware"
-	*/
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 
 	"github.com/mmcdole/gofeed/rss"
 )
 
+type RSSMeta struct {
+	url      string
+	category string
+	provider string
+}
+
+var rssSources []RSSMeta
+
+/*
 const (
 	bbcUKNews       = "http://feeds.bbci.co.uk/news/uk/rss.xml"
 	bbcTechNews     = "http://feeds.bbci.co.uk/news/technology/rss.xml"
 	reutersUKNews   = "http://feeds.reuters.com/reuters/UKdomesticNews?format=xml"
 	reutersTechNews = "http://feeds.reuters.com/reuters/technologyNews?format=xml"
-)
+)*/
+
+func init() {
+	var (
+		bbcUKNews       = RSSMeta{url: "http://feeds.bbci.co.uk/news/uk/rss.xml", category: "UK", provider: "BBC"}
+		bbcTechNews     = RSSMeta{url: "http://feeds.bbci.co.uk/news/technology/rss.xml", category: "Technology", provider: "BBC"}
+		reutersUKNews   = RSSMeta{url: "http://feeds.reuters.com/reuters/UKdomesticNews?format=xml", category: "UK", provider: "Reuters"}
+		reutersTechNews = RSSMeta{url: "http://feeds.reuters.com/reuters/technologyNews?format=xml", category: "Technology", provider: "Reuters"}
+	)
+	rssSources = []RSSMeta{reutersTechNews, reutersUKNews, bbcTechNews, bbcUKNews}
+}
 
 type NewsItem struct {
 	Title         string     `json:"title"`
@@ -38,41 +56,85 @@ func (p newsAggregate) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 func (p newsAggregate) Less(i, j int) bool { return p[i].DatePublished.Before(*p[j].DatePublished) }
 */
 func main() {
-	/*
-		r := chi.NewRouter()
-		// A good base middleware stack
-		r.Use(middleware.RequestID)
-		r.Use(middleware.RealIP)
-		r.Use(middleware.Logger)
-		r.Use(middleware.Recoverer)
+	r := chi.NewRouter()
+	// A good base middleware stack
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
 
-		// Set a timeout value on the request context (ctx), that will signal
-		// through ctx.Done() that the request has timed out and further
-		// processing should be stopped.
-		r.Use(middleware.Timeout(30 * time.Second))
-	*/
+	// Set a timeout value on the request context (ctx), that will signal
+	// through ctx.Done() that the request has timed out and further
+	// processing should be stopped.
+	r.Use(middleware.Timeout(30 * time.Second))
 
-	urls := []string{reutersTechNews, reutersUKNews, bbcTechNews, bbcUKNews}
-	// urls := []string{reutersTechNews, reutersUKNews}
-	news, err := fetchNewsIems(urls)
-	if err == nil {
-		totalNews := len(news)
-		jsonNews, _ := json.MarshalIndent(news, "", "    ")
-		fmt.Printf("%s\nof total News Items: %d\n", string(jsonNews), totalNews)
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hello RESTify RSS"))
+	})
+	// RESTy routes for "articles" resource
+	r.Route("/articles", func(r chi.Router) {
+		r.Get("/", listArticles) // GET /articles/search
+	})
+
+	http.ListenAndServe(":3333", r)
+}
+
+func listArticles(w http.ResponseWriter, r *http.Request) {
+	queryMap := r.URL.Query()
+	category := queryMap.Get("category")
+	provider := queryMap.Get("provider")
+	fmt.Printf("category:%#v\n", category)
+	fmt.Printf("provider:%#v\n", provider)
+	// w.Write([]byte(fmt.Sprintf("hi %s", string("fun"))))
+	filterCriteria := map[string]string{"category": category, "provider": provider}
+	news, err := fetchNewsIems(rssSources)
+	if err != nil {
+		fmt.Errorf(err.Error())
 	}
-
 	/*
-		for _, newsItem := range newsItems {
-			fmt.Printf("%#v\n", newsItem)
+		if err == nil {
+			totalNews := len(news)
+			jsonNews, _ := json.MarshalIndent(news, "", "    ")
+			fmt.Printf("%s\nof total News Items: %d\n", string(jsonNews), totalNews)
+		}*/
+	fmt.Printf("Total news articles are:%d\n", len(news))
+	filteredNews := filterNewsAggregate(news, filterCriteria)
+	fmt.Printf("Filtered news articles are:%d\n", len(filteredNews))
+	jsonFilteredNews, _ := json.Marshal(filteredNews)
+
+	w.Write(jsonFilteredNews)
+}
+
+func filterNewsAggregate(news newsAggregate, filterCriteria map[string]string) (filteredNewsAggregate newsAggregate) {
+	filteredNewsAggregate = make(newsAggregate, 0)
+	for _, newsItm := range news {
+		if selectorCriteria(newsItm, filterCriteria) {
+			filteredNewsAggregate = append(filteredNewsAggregate, newsItm)
+		}
+	}
+	return filteredNewsAggregate
+}
+
+func selectorCriteria(newsItem NewsItem, filterCriteria map[string]string) (isSelected bool) {
+	isSelected = true
+	/*
+		for key, criterion := range filterCriteria {
+			if criterion != "" && ((strings.EqualFold(key, "category") && !strings.EqualFold(newsItem.Category, criterion)) ||
+				(strings.EqualFold(key, "provider") && !strings.EqualFold(newsItem.Provider, criterion))) {
+				return false
+			}
 		}
 	*/
 
-	/*
-		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("hello Go-Chi"))
-		})
-		http.ListenAndServe(":3333", r)
-	*/
+	filterCate, _ := filterCriteria["category"]
+	if filterCate != "" && !strings.EqualFold(newsItem.Category, filterCate) {
+		return false
+	}
+	filterProv, _ := filterCriteria["provider"]
+	if filterProv != "" && !strings.EqualFold(newsItem.Provider, filterProv) {
+		return false
+	}
+	return isSelected
 }
 
 func downloadRSS(url string) (*rss.Feed, error) {
@@ -100,16 +162,16 @@ func downloadRSS(url string) (*rss.Feed, error) {
 	return rssFeed, nil
 }
 
-func fetchNewsIems(rssUrls []string) (newsAggregate, error) {
+func fetchNewsIems(rssSources []RSSMeta) (newsAggregate, error) {
 	news := make(newsAggregate, 0)
 
-	for _, url := range rssUrls {
-		feedData, err := downloadRSS(url)
+	for _, rssSrc := range rssSources {
+		feedData, err := downloadRSS(rssSrc.url)
 		if err != nil {
 			fmt.Errorf("Error:%s\n", err.Error())
 			return nil, err
 		}
-		provider, category := fetchFeedMeta(url)
+		// provider, category := fetchFeedMeta(url)
 		// fmt.Printf("Data\n%s\nurl: %s feed data", feedData, url)
 		for _, rssItem := range feedData.Items {
 			/*
@@ -126,7 +188,7 @@ func fetchNewsIems(rssUrls []string) (newsAggregate, error) {
 				}
 				linkStr := link.String()
 			*/
-			newsItem := NewsItem{Title: rssItem.Title, Url: rssItem.Link, DatePublished: rssItem.PubDateParsed, Provider: provider, Category: category}
+			newsItem := NewsItem{Title: rssItem.Title, Url: rssItem.Link, DatePublished: rssItem.PubDateParsed, Provider: rssSrc.provider, Category: rssSrc.category}
 			// news = append(news, newsItem)
 			news = sortedInsert(news, newsItem)
 		}
@@ -156,6 +218,7 @@ func sortedInsert(news newsAggregate, newsItem NewsItem) newsAggregate {
 	return news
 }
 
+/*
 func fetchFeedMeta(url string) (provider, category string) {
 	switch url {
 	case reutersTechNews:
@@ -176,7 +239,7 @@ func fetchFeedMeta(url string) (provider, category string) {
 	}
 	return provider, category
 }
-
+*/
 /*
 func (f Feed) String() string {
 	json, _ := json.MarshalIndent(f, "", "    ")
