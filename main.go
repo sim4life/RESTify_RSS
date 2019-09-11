@@ -2,14 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
-	"errors"
-	"io"
-	"log"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
@@ -27,7 +27,7 @@ type RSSMeta struct {
 
 var (
 	rssSources []RSSMeta
-	newsCache *cache.Cache
+	newsCache  *cache.Cache
 )
 
 const newsCacheKey = "news"
@@ -74,7 +74,7 @@ func main() {
 	})
 	// RESTy routes for "articles" resource
 	r.Route("/articles", func(r chi.Router) {
-		r.Get("/", listArticles) // GET /articles/?category=&provider=
+		r.Get("/", listArticles) // GET /articles/?category=UK&provider=BBC
 	})
 
 	log.Fatal(http.ListenAndServe(":3333", r))
@@ -95,7 +95,7 @@ func listArticles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	filteredNews := filterNewsAggregate(news, filterCriteria)
+	filteredNews := news.filterNewsAggregate(filterCriteria)
 	jsonFilteredNews, err := json.Marshal(filteredNews)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -106,17 +106,17 @@ func listArticles(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonFilteredNews)
 }
 
-func filterNewsAggregate(news newsAggregate, filterCriteria map[string]string) (filteredNewsAggregate newsAggregate) {
+func (news newsAggregate) filterNewsAggregate(filterCriteria map[string]string) (filteredNewsAggregate newsAggregate) {
 	filteredNewsAggregate = make(newsAggregate, 0)
 	for _, newsItm := range news {
-		if selectItemOnCriteria(newsItm, filterCriteria) {
+		if newsItm.selectItemOnCriteria(filterCriteria) {
 			filteredNewsAggregate = append(filteredNewsAggregate, newsItm)
 		}
 	}
 	return filteredNewsAggregate
 }
 
-func selectItemOnCriteria(newsItem NewsItem, filterCriteria map[string]string) (isSelected bool) {
+func (newsItem NewsItem) selectItemOnCriteria(filterCriteria map[string]string) (isSelected bool) {
 	isSelected = true
 
 	filterCategory, _ := filterCriteria["category"]
@@ -182,23 +182,22 @@ func fetchNewsIems(rssSources []RSSMeta) (newsAggregate, error) {
 		if err != nil {
 			fmt.Errorf("Error:%s\n", err.Error())
 			downloadErr = errors.New("Some RSS feeds could NOT be downloaded")
-			continue		// some RSS feeds may be unavailable
+			continue // some RSS feeds may be unavailable
 		}
 
-		sortedNews = sortNewsFromFeedData(sortedNews, feedData.Items, rssSrc)
+		sortedNews.sortNewsFromFeedData(feedData.Items, rssSrc)
 	}
-	
+
 	setNewsIntoCache(sortedNews)
-	
+
 	return sortedNews, downloadErr
 }
 
-func sortNewsFromFeedData(sortedNews newsAggregate, feedDataItems []*rss.Item, rssSource RSSMeta) (newsAggregate) {
+func (sortedNews *newsAggregate) sortNewsFromFeedData(feedDataItems []*rss.Item, rssSource RSSMeta) {
 	for _, rssItem := range feedDataItems {
 		newsItem := NewsItem{Title: rssItem.Title, Url: rssItem.Link, DatePublished: rssItem.PubDateParsed, Provider: rssSource.provider, Category: rssSource.category}
-		sortedNews = sortedInsert(sortedNews, newsItem)
+		sortedNews.sortedInsert(newsItem)
 	}
-	return sortedNews
 }
 
 func getNewsFromCache() (cachedNews newsAggregate, isFound bool) {
@@ -216,10 +215,9 @@ func setNewsIntoCache(news newsAggregate) {
 	newsCache.Set(newsCacheKey, news, cache.DefaultExpiration)
 }
 
-func sortedInsert(news newsAggregate, newsItem NewsItem) (sortedNews newsAggregate) {
-	index := sort.Search(len(news), func(i int) bool { return news[i].DatePublished.Before(*newsItem.DatePublished) })
-	sortedNews = append(news, NewsItem{}) // appending empty NewsItem to increase size of sortedNews slice
-	copy(sortedNews[index+1:], sortedNews[index:])
-	sortedNews[index] = newsItem
-	return sortedNews
+func (sortedNews *newsAggregate) sortedInsert(newsItem NewsItem) {
+	index := sort.Search(len(*sortedNews), func(i int) bool { return (*sortedNews)[i].DatePublished.Before(*newsItem.DatePublished) })
+	(*sortedNews) = append(*sortedNews, NewsItem{}) // appending empty NewsItem to increase size of sortedNews slice
+	copy((*sortedNews)[index+1:], (*sortedNews)[index:])
+	(*sortedNews)[index] = newsItem
 }

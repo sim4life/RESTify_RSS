@@ -1,9 +1,9 @@
 package main
 
 import (
+	"reflect"
 	"testing"
 	"time"
-	"reflect"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -37,33 +37,33 @@ func Test_filterNewsAggregate(t *testing.T) {
 	news = append(news, newsItem)
 
 	tests := map[string]struct {
-		input   newsAggregate
+		input  newsAggregate
 		filter map[string]string
-		want  newsAggregate
-}{
-		"empty criteria": {input: news, filter: map[string]string{}, want: news},
-		"category match":     {input: news, filter: map[string]string{"category": "UK"}, want: newsAggregate{NewsItem{Title: "Article 3", Url: "URL 3", DatePublished: &now, Provider: "BBC", Category: "UK"}}},
-		"category NO match":  {input: news, filter: map[string]string{"category": "Euro"}, want: newsAggregate{}},
-		"provider match":  {input: news, filter: map[string]string{"provider": "CNN"}, want: newsAggregate{NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}}},
-		"provider NO match":  {input: news, filter: map[string]string{"provider": "Reuters"}, want: newsAggregate{}},
-		"double match":     {input: news, filter: map[string]string{"category": "TECH", "provider": "CNN"}, want: newsAggregate{NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}}},
-		"double NO match":     {input: news, filter: map[string]string{"category": "Euro", "provider": "CNN"}, want: newsAggregate{}},
-}
+		want   newsAggregate
+	}{
+		"empty criteria":    {input: news, filter: map[string]string{}, want: news},
+		"category match":    {input: news, filter: map[string]string{"category": "UK"}, want: newsAggregate{NewsItem{Title: "Article 3", Url: "URL 3", DatePublished: &now, Provider: "BBC", Category: "UK"}}},
+		"category NO match": {input: news, filter: map[string]string{"category": "Euro"}, want: newsAggregate{}},
+		"provider match":    {input: news, filter: map[string]string{"provider": "CNN"}, want: newsAggregate{NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}}},
+		"provider NO match": {input: news, filter: map[string]string{"provider": "Reuters"}, want: newsAggregate{}},
+		"double match":      {input: news, filter: map[string]string{"category": "TECH", "provider": "CNN"}, want: newsAggregate{NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}}},
+		"double NO match":   {input: news, filter: map[string]string{"category": "Euro", "provider": "CNN"}, want: newsAggregate{}},
+	}
 
-for name, tc := range tests {
+	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-				got := filterNewsAggregate(tc.input, tc.filter)
-				if !reflect.DeepEqual(tc.want, got) {
-					// t.Fatalf("expected: \n%#v, \ngot: \n%#v", tc.want, got)
-					t.Errorf("expected: \n%#v, \ngot: \n%#v\n\n", tc.want, got)
+			got := tc.input.filterNewsAggregate(tc.filter)
+			if !reflect.DeepEqual(tc.want, got) {
+				// t.Fatalf("expected: \n%#v, \ngot: \n%#v", tc.want, got)
+				t.Errorf("expected: \n%#v, \ngot: \n%#v\n\n", tc.want, got)
 			}
-				
-				diff := cmp.Diff(tc.want, got)
-            if diff != "" {
-                t.Fatalf(diff)
-						}			
+
+			diff := cmp.Diff(tc.want, got)
+			if diff != "" {
+				t.Fatalf(diff)
+			}
 		})
-}
+	}
 }
 
 // Table driven test
@@ -72,50 +72,50 @@ func Test_selectItemOnCriteria(t *testing.T) {
 	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
 
 	tests := map[string]struct {
-		input   NewsItem
+		input  NewsItem
 		filter map[string]string
-		want  bool
-}{
-		"empty criteria": {input: newsItem, filter: map[string]string{}, want: true},
-		"category match":     {input: newsItem, filter: map[string]string{"category": "Tech"}, want: true},
-		"category NO match":  {input: newsItem, filter: map[string]string{"category": "Euro"}, want: false},
-		"provider match":  {input: newsItem, filter: map[string]string{"provider": "CNN"}, want: true},
-		"provider NO match":  {input: newsItem, filter: map[string]string{"provider": "BBC"}, want: false},
-		"double match":     {input: newsItem, filter: map[string]string{"category": "TECH", "provider": "CNN"}, want: true},
-		"double category NO match":     {input: newsItem, filter: map[string]string{"category": "Tech", "provider": "BBC"}, want: false},
-		"double provider NO match":     {input: newsItem, filter: map[string]string{"category": "Euro", "provider": "CNN"}, want: false},
-}
+		want   bool
+	}{
+		"empty criteria":           {input: newsItem, filter: map[string]string{}, want: true},
+		"category match":           {input: newsItem, filter: map[string]string{"category": "Tech"}, want: true},
+		"category NO match":        {input: newsItem, filter: map[string]string{"category": "Euro"}, want: false},
+		"provider match":           {input: newsItem, filter: map[string]string{"provider": "CNN"}, want: true},
+		"provider NO match":        {input: newsItem, filter: map[string]string{"provider": "BBC"}, want: false},
+		"double match":             {input: newsItem, filter: map[string]string{"category": "TECH", "provider": "CNN"}, want: true},
+		"double category NO match": {input: newsItem, filter: map[string]string{"category": "Tech", "provider": "BBC"}, want: false},
+		"double provider NO match": {input: newsItem, filter: map[string]string{"category": "Euro", "provider": "CNN"}, want: false},
+	}
 
-for name, tc := range tests {
+	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-				got := selectItemOnCriteria(tc.input, tc.filter)
-				if tc.want != got {
-					t.Errorf("Failed with expected selection:%t and actual selection:%t\n", tc.want, got)
-				}
+			got := tc.input.selectItemOnCriteria(tc.filter)
+			if tc.want != got {
+				t.Errorf("Failed with expected selection:%t and actual selection:%t\n", tc.want, got)
+			}
 		})
-}
+	}
 }
 
 // Table driven test
 func Test_filterOnAttribute(t *testing.T) {
 	tests := map[string]struct {
-		input string
-		filter   string
-		want  bool
-}{
+		input  string
+		filter string
+		want   bool
+	}{
 		"no filter": {input: "Dummy1", filter: "", want: true},
 		"simple":    {input: "Dummy1", filter: "dummy1", want: true},
 		"no match":  {input: "Dummy1", filter: "yummy2", want: false},
-}
+	}
 
-for name, tc := range tests {
+	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-				got := filterOnAttribute(tc.input, tc.filter)
-				if tc.want != got {
-					t.Errorf("Failed with expected selection:%t and actual selection:%t\n", tc.want, got)
-				}
+			got := filterOnAttribute(tc.input, tc.filter)
+			if tc.want != got {
+				t.Errorf("Failed with expected selection:%t and actual selection:%t\n", tc.want, got)
+			}
 		})
-}
+	}
 }
 
 func Test_downloadRSSFeed(t *testing.T) {
@@ -137,7 +137,7 @@ func Test_sortedInsertSingle(t *testing.T) {
 	news := make(newsAggregate, 0)
 	now := time.Now()
 	newsItem := NewsItem{Title: "Article 1", Url: "Dummy URL 1", DatePublished: &now, Provider: "Dummy provider", Category: "Dummy category"}
-	news = sortedInsert(news, newsItem)
+	news.sortedInsert(newsItem)
 	exp_len := 1
 	act_len := len(news)
 
@@ -151,9 +151,9 @@ func Test_sortedInsertDouble(t *testing.T) {
 	now := time.Now()
 	prevNow := now.Add(-10 * time.Minute)
 	newsItem := NewsItem{Title: "Article 1", Url: "Dummy URL 1", DatePublished: &now, Provider: "Dummy provider", Category: "Dummy category"}
-	news = sortedInsert(news, newsItem)
+	news.sortedInsert(newsItem)
 	newsItem = NewsItem{Title: "Article 2", Url: "Dummy URL 2", DatePublished: &prevNow, Provider: "Dummy provider", Category: "Dummy category"}
-	news = sortedInsert(news, newsItem)
+	news.sortedInsert(newsItem)
 	exp_len := 2
 	act_len := len(news)
 	exp_first_article := "Article 1"
@@ -172,18 +172,17 @@ func Test_sortedInsertDouble(t *testing.T) {
 	}
 }
 
-
 func Test_sortedInsertTriple(t *testing.T) {
 	news := make(newsAggregate, 0)
 	now := time.Now()
 	prevNow := now.Add(-10 * time.Minute)
 	morePrevNow := now.Add(-10 * time.Hour)
 	newsItem := NewsItem{Title: "Article 1", Url: "Dummy URL 1", DatePublished: &now, Provider: "Dummy provider", Category: "Dummy category"}
-	news = sortedInsert(news, newsItem)
+	news.sortedInsert(newsItem)
 	newsItem = NewsItem{Title: "Article 2", Url: "Dummy URL 2", DatePublished: &morePrevNow, Provider: "Dummy provider", Category: "Dummy category"}
-	news = sortedInsert(news, newsItem)
+	news.sortedInsert(newsItem)
 	newsItem = NewsItem{Title: "Article 3", Url: "Dummy URL 3", DatePublished: &prevNow, Provider: "Dummy provider", Category: "Dummy category"}
-	news = sortedInsert(news, newsItem)
+	news.sortedInsert(newsItem)
 	exp_len := 3
 	act_len := len(news)
 	exp_first_article := "Article 1"
