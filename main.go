@@ -25,8 +25,10 @@ type RSSMeta struct {
 	provider string
 }
 
-var rssSources []RSSMeta
-var newsCache *cache.Cache
+var (
+	rssSources []RSSMeta
+	newsCache *cache.Cache
+)
 
 const newsCacheKey = "news"
 
@@ -75,8 +77,7 @@ func main() {
 		r.Get("/", listArticles) // GET /articles/?category=&provider=
 	})
 
-	http.ListenAndServe(":3333", r)
-	//log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":3333", r))
 }
 
 func listArticles(w http.ResponseWriter, r *http.Request) {
@@ -94,10 +95,7 @@ func listArticles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("Total news articles are:%d\n", len(news))
 	filteredNews := filterNewsAggregate(news, filterCriteria)
-	log.Printf("Filter Criteria is:\nCategory:%s\nProvider:%s\n", filterCriteria["category"], filterCriteria["provider"])
-	log.Printf("Filtered news articles are:%d\n", len(filteredNews))
 	jsonFilteredNews, err := json.Marshal(filteredNews)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
