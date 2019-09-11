@@ -3,10 +3,13 @@ package main
 import (
 	"testing"
 	"time"
+	"reflect"
+
+	"github.com/google/go-cmp/cmp"
 )
 
-/*
 func Test_fetchNewsIems(t *testing.T) {
+	t.Skip() // skipping because it depends on external system - internet
 	bbcUKNews := RSSMeta{url: "http://feeds.bbci.co.uk/news/uk/rss.xml", category: "UK", provider: "BBC"}
 	rssMetas := []RSSMeta{bbcUKNews}
 
@@ -21,223 +24,104 @@ func Test_fetchNewsIems(t *testing.T) {
 		t.Errorf("Failed with expected length to be greater than:%d and actual length:%d\n", exp_len, act_len)
 	}
 }
-*/
-func Test_filterNewsAggregateEmptyCrit(t *testing.T) {
-	filterCriteria := map[string]string{}
+
+// Table driven test
+func Test_filterNewsAggregate(t *testing.T) {
 	now := time.Now()
 	news := make(newsAggregate, 0)
 	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
 	news = append(news, newsItem)
 	newsItem = NewsItem{Title: "Article 2", Url: "URL 2", DatePublished: &now, Provider: "BBC", Category: "Tech"}
 	news = append(news, newsItem)
-	
-	filteredNews := filterNewsAggregate(news, filterCriteria)
-	
-	exp_len := 2
-	act_len := len(filteredNews)
-	exp_first_article := "Article 1"
-	exp_second_article := "Article 2"
-	act_first_article := filteredNews[0].Title
-	act_second_article := filteredNews[1].Title
-
-	if act_len != exp_len {
-		t.Errorf("Failed with expected length:%d and actual length:%d\n", exp_len, act_len)
-	}
-	if act_first_article != exp_first_article {
-		t.Errorf("Failed with expected First article:%s and actual First article:%s\n", exp_first_article, act_first_article)
-	}
-	if act_second_article != exp_second_article {
-		t.Errorf("Failed with expected Second article:%s and actual Second article:%s\n", exp_second_article, act_second_article)
-	}
-}
-
-func Test_filterNewsAggregateEmptyFiltered(t *testing.T) {
-	filterCriteria := map[string]string{"category": "Euro"}
-	now := time.Now()
-	news := make(newsAggregate, 0)
-	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
+	newsItem = NewsItem{Title: "Article 3", Url: "URL 3", DatePublished: &now, Provider: "BBC", Category: "UK"}
 	news = append(news, newsItem)
-	newsItem = NewsItem{Title: "Article 2", Url: "URL 2", DatePublished: &now, Provider: "BBC", Category: "Tech"}
-	news = append(news, newsItem)
-	
-	filteredNews := filterNewsAggregate(news, filterCriteria)
-	
-	exp_len := 0
-	act_len := len(filteredNews)
 
-	if act_len != exp_len {
-		t.Errorf("Failed with expected length:%d and actual length:%d\n", exp_len, act_len)
-	}
+	tests := map[string]struct {
+		input   newsAggregate
+		filter map[string]string
+		want  newsAggregate
+}{
+		"empty criteria": {input: news, filter: map[string]string{}, want: news},
+		"category match":     {input: news, filter: map[string]string{"category": "UK"}, want: newsAggregate{NewsItem{Title: "Article 3", Url: "URL 3", DatePublished: &now, Provider: "BBC", Category: "UK"}}},
+		"category NO match":  {input: news, filter: map[string]string{"category": "Euro"}, want: newsAggregate{}},
+		"provider match":  {input: news, filter: map[string]string{"provider": "CNN"}, want: newsAggregate{NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}}},
+		"provider NO match":  {input: news, filter: map[string]string{"provider": "Reuters"}, want: newsAggregate{}},
+		"double match":     {input: news, filter: map[string]string{"category": "TECH", "provider": "CNN"}, want: newsAggregate{NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}}},
+		"double NO match":     {input: news, filter: map[string]string{"category": "Euro", "provider": "CNN"}, want: newsAggregate{}},
 }
 
-func Test_filterNewsAggregateLessFiltered(t *testing.T) {
-	filterCriteria := map[string]string{"provider": "CNN"}
-	now := time.Now()
-	news := make(newsAggregate, 0)
-	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
-	news = append(news, newsItem)
-	newsItem = NewsItem{Title: "Article 2", Url: "URL 2", DatePublished: &now, Provider: "BBC", Category: "Tech"}
-	news = append(news, newsItem)
-	
-	filteredNews := filterNewsAggregate(news, filterCriteria)
-	
-	exp_len := 1
-	act_len := len(filteredNews)
-	exp_first_article := "Article 1"
-	act_first_article := filteredNews[0].Title
-
-	if act_len != exp_len {
-		t.Errorf("Failed with expected length:%d and actual length:%d\n", exp_len, act_len)
-	}
-	if act_first_article != exp_first_article {
-		t.Errorf("Failed with expected First article:%s and actual First article:%s\n", exp_first_article, act_first_article)
-	}
+for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+				got := filterNewsAggregate(tc.input, tc.filter)
+				if !reflect.DeepEqual(tc.want, got) {
+					// t.Fatalf("expected: \n%#v, \ngot: \n%#v", tc.want, got)
+					t.Errorf("expected: \n%#v, \ngot: \n%#v\n\n", tc.want, got)
+			}
+				
+				diff := cmp.Diff(tc.want, got)
+            if diff != "" {
+                t.Fatalf(diff)
+						}			
+		})
+}
 }
 
-func Test_filterNewsAggregateFullFiltered(t *testing.T) {
-	filterCriteria := map[string]string{"category": "Tech"}
-	now := time.Now()
-	news := make(newsAggregate, 0)
-	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
-	news = append(news, newsItem)
-	newsItem = NewsItem{Title: "Article 2", Url: "URL 2", DatePublished: &now, Provider: "BBC", Category: "Tech"}
-	news = append(news, newsItem)
-	
-	filteredNews := filterNewsAggregate(news, filterCriteria)
-	
-	exp_len := 2
-	act_len := len(filteredNews)
-	exp_first_article := "Article 1"
-	exp_second_article := "Article 2"
-	act_first_article := filteredNews[0].Title
-	act_second_article := filteredNews[1].Title
-
-	if act_len != exp_len {
-		t.Errorf("Failed with expected length:%d and actual length:%d\n", exp_len, act_len)
-	}
-	if act_first_article != exp_first_article {
-		t.Errorf("Failed with expected First article:%s and actual First article:%s\n", exp_first_article, act_first_article)
-	}
-	if act_second_article != exp_second_article {
-		t.Errorf("Failed with expected Second article:%s and actual Second article:%s\n", exp_second_article, act_second_article)
-	}
-}
-
-func Test_selectItemOnCriteriaEmpty(t *testing.T) {
-	filterCriteria := map[string]string{}
+// Table driven test
+func Test_selectItemOnCriteria(t *testing.T) {
 	now := time.Now()
 	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
-	exp_select := true
-	act_select := selectItemOnCriteria(newsItem, filterCriteria)
-	if act_select != exp_select {
-		t.Errorf("Failed with expected selector:%t and actual selector:%t\n", exp_select, act_select)
-	}
+
+	tests := map[string]struct {
+		input   NewsItem
+		filter map[string]string
+		want  bool
+}{
+		"empty criteria": {input: newsItem, filter: map[string]string{}, want: true},
+		"category match":     {input: newsItem, filter: map[string]string{"category": "Tech"}, want: true},
+		"category NO match":  {input: newsItem, filter: map[string]string{"category": "Euro"}, want: false},
+		"provider match":  {input: newsItem, filter: map[string]string{"provider": "CNN"}, want: true},
+		"provider NO match":  {input: newsItem, filter: map[string]string{"provider": "BBC"}, want: false},
+		"double match":     {input: newsItem, filter: map[string]string{"category": "TECH", "provider": "CNN"}, want: true},
+		"double category NO match":     {input: newsItem, filter: map[string]string{"category": "Tech", "provider": "BBC"}, want: false},
+		"double provider NO match":     {input: newsItem, filter: map[string]string{"category": "Euro", "provider": "CNN"}, want: false},
 }
 
-func Test_selectItemOnCriteriaSingle1True(t *testing.T) {
-	filterCriteria := map[string]string{"category": "Tech"}
-	now := time.Now()
-	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
-	exp_select := true
-	act_select := selectItemOnCriteria(newsItem, filterCriteria)
-	if act_select != exp_select {
-		t.Errorf("Failed with expected selector:%t and actual selector:%t\n", exp_select, act_select)
-	}
+for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+				got := selectItemOnCriteria(tc.input, tc.filter)
+				if tc.want != got {
+					t.Errorf("Failed with expected selection:%t and actual selection:%t\n", tc.want, got)
+				}
+		})
+}
 }
 
-func Test_selectItemOnCriteriaSingle1False(t *testing.T) {
-	filterCriteria := map[string]string{"category": "Euro"}
-	now := time.Now()
-	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
-	exp_select := false
-	act_select := selectItemOnCriteria(newsItem, filterCriteria)
-	if act_select != exp_select {
-		t.Errorf("Failed with expected selector:%t and actual selector:%t\n", exp_select, act_select)
-	}
+// Table driven test
+func Test_filterOnAttribute(t *testing.T) {
+	tests := map[string]struct {
+		input string
+		filter   string
+		want  bool
+}{
+		"no filter": {input: "Dummy1", filter: "", want: true},
+		"simple":    {input: "Dummy1", filter: "dummy1", want: true},
+		"no match":  {input: "Dummy1", filter: "yummy2", want: false},
 }
 
-func Test_selectItemOnCriteriaSingle2True(t *testing.T) {
-	filterCriteria := map[string]string{"provider": "CNN"}
-	now := time.Now()
-	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
-	exp_select := true
-	act_select := selectItemOnCriteria(newsItem, filterCriteria)
-	if act_select != exp_select {
-		t.Errorf("Failed with expected selector:%t and actual selector:%t\n", exp_select, act_select)
-	}
+for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+				got := filterOnAttribute(tc.input, tc.filter)
+				if tc.want != got {
+					t.Errorf("Failed with expected selection:%t and actual selection:%t\n", tc.want, got)
+				}
+		})
+}
 }
 
-func Test_selectItemOnCriteriaSingle2False(t *testing.T) {
-	filterCriteria := map[string]string{"provider": "BBC"}
-	now := time.Now()
-	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
-	exp_select := false
-	act_select := selectItemOnCriteria(newsItem, filterCriteria)
-	if act_select != exp_select {
-		t.Errorf("Failed with expected selector:%t and actual selector:%t\n", exp_select, act_select)
-	}
-}
-
-func Test_selectItemOnCriteriaDoubleTrue(t *testing.T) {
-	filterCriteria := map[string]string{"category": "TECH", "provider": "CNN"}
-	now := time.Now()
-	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
-	exp_select := true
-	act_select := selectItemOnCriteria(newsItem, filterCriteria)
-	if act_select != exp_select {
-		t.Errorf("Failed with expected selector:%t and actual selector:%t\n", exp_select, act_select)
-	}
-}
-
-func Test_selectItemOnCriteriaDoubleFalse1(t *testing.T) {
-	filterCriteria := map[string]string{"category": "BBC", "provider": "Tech"}
-	now := time.Now()
-	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
-	exp_select := false
-	act_select := selectItemOnCriteria(newsItem, filterCriteria)
-	if act_select != exp_select {
-		t.Errorf("Failed with expected selector:%t and actual selector:%t\n", exp_select, act_select)
-	}
-}
-
-func Test_selectItemOnCriteriaDoubleFalse2(t *testing.T) {
-	filterCriteria := map[string]string{"category": "CNN", "provider": "Euro"}
-	now := time.Now()
-	newsItem := NewsItem{Title: "Article 1", Url: "URL 1", DatePublished: &now, Provider: "CNN", Category: "Tech"}
-	exp_select := false
-	act_select := selectItemOnCriteria(newsItem, filterCriteria)
-	if act_select != exp_select {
-		t.Errorf("Failed with expected selection:%t and actual selection:%t\n", exp_select, act_select)
-	}
-}
-
-func Test_filterOnAttributeEmptyFilter(t *testing.T) {
-	exp_select := true
-	act_select := filterOnAttribute("Dummy1", "")
-	if act_select != exp_select {
-		t.Errorf("Failed with expected selection:%t and actual selection:%t\n", exp_select, act_select)
-	}
-}
-
-func Test_filterOnAttributeTrue(t *testing.T) {
-	exp_select := true
-	act_select := filterOnAttribute("Dummy1", "dummy1")
-	if act_select != exp_select {
-		t.Errorf("Failed with expected selection:%t and actual selection:%t\n", exp_select, act_select)
-	}
-}
-
-func Test_filterOnAttributeFalse(t *testing.T) {
-	exp_select := false
-	act_select := filterOnAttribute("Dummy1", "yummy2")
-	if act_select != exp_select {
-		t.Errorf("Failed with expected selection:%t and actual selection:%t\n", exp_select, act_select)
-	}
-}
-/*
-func Test_downloadRSS(t *testing.T) {
+func Test_downloadRSSFeed(t *testing.T) {
+	t.Skip() // skipping because it depends on external system - internet
 	url := "http://feeds.bbci.co.uk/news/uk/rss.xml"
-	feedData, err := downloadRSS(url)
+	feedData, err := downloadRSSFeed(url)
 	exp_len := 1
 	act_len := len(feedData.Items)
 
@@ -248,7 +132,6 @@ func Test_downloadRSS(t *testing.T) {
 		t.Errorf("Failed with expected length to be greater than:%d and actual length:%d\n", exp_len, act_len)
 	}
 }
-*/
 
 func Test_sortedInsertSingle(t *testing.T) {
 	news := make(newsAggregate, 0)

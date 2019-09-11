@@ -140,7 +140,7 @@ func filterOnAttribute(attribute, filter string) (isSelected bool) {
 	return isSelected
 }
 
-func downloadRSS(url string) (*rss.Feed, error) {
+func downloadRSSFeed(url string) (*rss.Feed, error) {
 	resp, err := fetchRSSFeed(url)
 	if err != nil {
 		return nil, err
@@ -180,7 +180,7 @@ func fetchNewsIems(rssSources []RSSMeta) (newsAggregate, error) {
 	sortedNews := make(newsAggregate, 0)
 
 	for _, rssSrc := range rssSources {
-		feedData, err := downloadRSS(rssSrc.url)
+		feedData, err := downloadRSSFeed(rssSrc.url)
 		if err != nil {
 			fmt.Errorf("Error:%s\n", err.Error())
 			downloadErr = errors.New("Some RSS feeds could NOT be downloaded")
